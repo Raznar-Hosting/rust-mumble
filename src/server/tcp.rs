@@ -8,7 +8,7 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::MessageKind;
 use crate::proto::mumble::Version;
-use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
+use crate::server::constants::MAX_BANDWIDTH_IN_BYTES;
 use crate::state::ServerStateRef;
 use anyhow::Context;
 use futures::TryFutureExt;
@@ -49,7 +49,7 @@ pub async fn create_tcp_server(
         let addr = tcp_stream.peer_addr()?;
 
         // if we're over our max client count then we should shut down the tcp stream
-        if cur_clients >= MAX_CLIENTS {
+        if cur_clients >= state.max_clients {
             tokio::spawn(async move {
                 // we don't care if this errors, drop the result
                 let _ = tcp_stream.shutdown();
@@ -58,7 +58,7 @@ pub async fn create_tcp_server(
                 "{:?} tried to join but the server is at maximum capacity ({}/{})",
                 addr,
                 cur_clients,
-                MAX_CLIENTS
+                state.max_clients
             );
             continue;
         }
@@ -132,7 +132,7 @@ async fn handle_new_client(
     static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[\d+\].*$").unwrap());
 
     if let Some(restrict_to) = restrict_to_version.as_ref() {
-        if !version_release.to_lowercase().contains(restrict_to) || !USERNAME_REGEX.is_match(&username) {
+        if !version_release.contains(restrict_to) || !USERNAME_REGEX.is_match(&username) {
             tracing::warn!(
                 "User '{}' connected with unofficial client '{}' from {}",
                 username,
@@ -147,9 +147,8 @@ async fn handle_new_client(
     let (read, write) = io::split(tls_stream);
     let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
 
+    tracing::info!("TCP new client {} connected {} from {}", username, peer_ip, version_release);
     let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
-
-    tracing::info!("TCP new client {} connected {}", username, peer_ip);
 
     let state_cl = state.clone();
     let client_cl = client.clone();

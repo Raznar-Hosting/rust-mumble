@@ -4,16 +4,17 @@ use crate::crypt::CryptState;
 use crate::error::{DisconnectReason, MumbleError};
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
-use crate::proto::{message_to_bytes, MessageKind};
-use crate::server::constants::{ConcurrentHashMap, MAX_CLIENTS};
+use crate::proto::{MessageKind, message_to_bytes};
+use crate::server::constants::ConcurrentHashMap;
+// use crate::server::constants::{ConcurrentHashMap, MAX_CLIENTS};
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
 // use scc::HashCache;
 use scc::ebr::Guard;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -68,30 +69,32 @@ pub struct ServerState {
     pub codec_state: Arc<CodecState>,
     pub socket: Arc<UdpSocket>,
     pub restrict_to_version: Arc<Option<String>>,
+    pub max_clients: usize,
     // pub logs: HashCache<SocketAddr, ()>,
     session_count: AtomicU32,
     channel_count: AtomicU32,
 }
 
 impl ServerState {
-    pub fn new(socket: Arc<UdpSocket>, restrict_to_version: Option<String>) -> Self {
+    pub fn new(socket: Arc<UdpSocket>, restrict_to_version: Option<String>, max_clients: usize) -> Self {
         let channels = ConcurrentHashMap::new();
         let _ = channels.insert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
 
         Self {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
             // later, which will prevent double-sends in certain situations
-            clients: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
-            restrict_to_version: Arc::new(restrict_to_version.map(|v| v.to_lowercase())),
+            clients: ConcurrentHashMap::with_capacity(max_clients),
+            restrict_to_version: Arc::new(restrict_to_version.map(|v| v)),
             // logs: HashCache::with_capacity(500, 1000),
-            clients_without_udp: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
-            clients_by_socket: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
-            // clients_by_peer: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
+            clients_without_udp: ConcurrentHashMap::with_capacity(max_clients),
+            clients_by_socket: ConcurrentHashMap::with_capacity(max_clients),
+            // clients_by_peer: ConcurrentHashMap::with_capacity(max_clients),
             channels,
             codec_state: Arc::new(CodecState::default()),
             socket,
             session_count: AtomicU32::new(1),
             channel_count: AtomicU32::new(1),
+            max_clients,
         }
     }
 

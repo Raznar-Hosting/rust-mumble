@@ -1,0 +1,8 @@
+services:
+  test:
+    image: test
+    ports:
+      - 64738:64738/tcp
+      - 64738:64738/udp
+    environment:
+      - MAX_CLIENTS=128

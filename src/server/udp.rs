@@ -1,4 +1,5 @@
 use crate::message::ClientMessage;
+use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
 use crate::{error::DecryptError, varint::ReadExt};
@@ -13,8 +14,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
-
-use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
     loop {
@@ -70,7 +69,7 @@ async fn handle_packet(
         // user count
         send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
         // max user count
-        send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS as u32)?;
+        send.write_u32::<byteorder::BigEndian>(state.max_clients as u32)?;
         // max bandwidth per user
         send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH_IN_BITS)?;
 

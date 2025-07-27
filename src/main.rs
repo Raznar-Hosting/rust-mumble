@@ -82,6 +82,8 @@ struct Args {
     /// clients with the CitizenFX mumble client to join.
     #[clap(short, long, value_parser, default_value = None)]
     restrict_to_version: Option<String>,
+    #[clap(short, long, value_parser, default_value = "32")]
+    max_clients: usize,
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -122,10 +124,10 @@ async fn main() {
 
     let udp_socket = Arc::new(socket);
 
-    let state = Arc::new(ServerState::new(udp_socket.clone(), args.restrict_to_version));
+    let state = Arc::new(ServerState::new(udp_socket.clone(), args.restrict_to_version, args.max_clients));
     let udp_state = state.clone();
 
-    tracing::info!("tcp/udp server start listening on {}", args.listen);
+    tracing::info!("tcp/udp server start listening on {} with max clients of {}", args.listen, args.max_clients);
 
     let cancelation_token = CancellationToken::new();
 
