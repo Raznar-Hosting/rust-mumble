@@ -4,12 +4,28 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.os }} / ${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: app-linux-x86_64
+            binary_name: rust-mumble
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: app-windows-x86_64.exe
+            binary_name: rust-mumble.exe
+
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: app-macos-x86_64
+            binary_name: rust-mumble
 
     steps:
       - uses: actions/checkout@v4
@@ -19,23 +35,40 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Linux musl needs extra tools
+      - name: Install musl tools
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      # 🔥 Create the Release page (only once)
-      - name: Create Release
-        if: matrix.target == 'x86_64-pc-windows-gnu'
+      - name: Rename binary
+        shell: bash
+        run: |
+          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} ${{ matrix.artifact_name }}
+
+      - name: Upload artifact to workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release and Upload
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 📦 Upload binaries
-      - name: Upload Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: target/${{ matrix.target }}/release/*
+          files: |
+            **/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
