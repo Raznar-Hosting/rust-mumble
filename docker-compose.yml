@@ -1,8 +1,11 @@
 services:
-  test:
-    image: test
+  mumble-fivem:
+    command: /rust-mumble
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - 64738:64738/tcp
-      - 64738:64738/udp
+      - "64738:64738/tcp"
+      - "64738:64738/udp"
     environment:
       - MAX_CLIENTS=128
