@@ -1,5 +1,3 @@
-# .github/workflows/release.yml
-
 on:
   push:
     tags:
@@ -7,21 +5,37 @@ on:
 
 jobs:
   release:
-    name: release ${{ matrix.target }}
     runs-on: ubuntu-latest
+
     strategy:
-      fail-fast: false
       matrix:
         target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compile and release
-        uses: rust-build/rust-build.action@v1.4.5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # 🔥 Create the Release page (only once)
+      - name: Create Release
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 📦 Upload binaries
+      - name: Upload Assets
+        uses: softprops/action-gh-release@v2
         with:
-          RUSTTARGET: ${{ matrix.target }}
-          TOOLCHAIN_VERSION: stable
-          EXTRA_FILES: "README.md LICENSE"
-          UPLOAD_MODE: github
+          files: target/${{ matrix.target }}/release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
