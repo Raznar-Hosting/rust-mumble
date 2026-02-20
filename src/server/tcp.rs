@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -8,7 +9,6 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::MessageKind;
 use crate::proto::mumble::Version;
-use crate::server::constants::MAX_BANDWIDTH_IN_BYTES;
 use crate::state::ServerStateRef;
 use anyhow::Context;
 use futures::TryFutureExt;
@@ -22,6 +22,13 @@ use tokio_rustls::{TlsAcceptor, server::TlsStream};
 
 use socket2::{SockRef, TcpKeepalive};
 
+fn shutdown_tcp_stream(mut tcp_stream: TcpStream) {
+    tokio::spawn(async move {
+        // we don't care if this errors, drop the result
+        let _ = tcp_stream.shutdown().await;
+    });
+}
+
 pub async fn create_tcp_server(
     tcp_listener: TcpListener,
     acceptor: TlsAcceptor,
@@ -31,10 +38,10 @@ pub async fn create_tcp_server(
     let tls_acceptor = acceptor.clone();
 
     loop {
-        let (mut tcp_stream, _remote_addr) = match tcp_listener.accept().await {
+        let (tcp_stream, _remote_addr) = match tcp_listener.accept().await {
             Ok(v) => v,
             Err(e) => {
-                tracing::error!("{}", e);
+                tracing::error!("Failed to accept TCP stream: {}", e);
                 continue;
             }
         };
@@ -45,15 +52,19 @@ pub async fn create_tcp_server(
 
         let restrict_to_version = state.restrict_to_version.clone();
 
-        let cur_clients = state.clients.len();
-        let addr = tcp_stream.peer_addr()?;
+        let cur_clients = state.active_clients.load(Ordering::Relaxed) as usize;
+        let addr = match tcp_stream.peer_addr() {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::error!("Failed to get TCP stream address: {}", e);
+                shutdown_tcp_stream(tcp_stream);
+                continue;
+            }
+        };
 
         // if we're over our max client count then we should shut down the tcp stream
         if cur_clients >= state.max_clients {
-            tokio::spawn(async move {
-                // we don't care if this errors, drop the result
-                let _ = tcp_stream.shutdown();
-            });
+            shutdown_tcp_stream(tcp_stream);
             tracing::info!(
                 "{:?} tried to join but the server is at maximum capacity ({}/{})",
                 addr,
@@ -145,10 +156,13 @@ async fn handle_new_client(
     }
 
     let (read, write) = io::split(tls_stream);
-    let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
 
-    tracing::info!("TCP new client {} connected {} from {}", username, peer_ip, version_release);
-    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
+    // we shouldn't really hit a case where this gets hit.
+    let (tx, rx) = mpsc::channel(4096);
+
+    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip).await;
+
+    tracing::info!("TCP new client {} connected {}", username, peer_ip);
 
     let state_cl = state.clone();
     let client_cl = client.clone();

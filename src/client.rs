@@ -31,16 +31,17 @@ pub type WeakClient = Weak<Client>;
 
 type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct NetStats {
     pub udp_packets: AtomicU32,
     pub tcp_packets: AtomicU32,
     pub udp_ping_avg: AtomicF32,
     pub udp_ping_var: AtomicF32,
     pub tcp_ping_avg: AtomicF32,
-    pub tcp_ping_var: AtomicF32
+    pub tcp_ping_var: AtomicF32,
 }
 
+#[derive(Debug)]
 pub struct Client {
     // pub version: Version,
     name: Arc<String>,
@@ -58,6 +59,7 @@ pub struct Client {
     // Token used to cancel any tasks related to this client, i.e. tcp/udp loops
     pub cancel_token: CancellationToken,
     pub udp_socket: Arc<UdpSocket>,
+    // TODO: We should properly split UDP/TCP to seperate publishers.
     pub publisher: Sender<ClientMessage>,
     pub targets: VoiceTargetArray,
     pub last_tcp_ping: AtomicCell<Instant>,
@@ -153,6 +155,7 @@ impl Client {
         &self.name
     }
 
+    #[tracing::instrument(level = "info")]
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
         // if our cancel token gets called mid write we should abort out of our write with an error
         tokio::select! {
@@ -331,7 +334,8 @@ impl Client {
 
             let buf = &dest.freeze()[..];
 
-            match timeout(Duration::from_millis(250), self.udp_socket.send_to(buf, addr.as_ref())).await {
+            // we're doing real time audio, if we can't send this in 10 millis then the information no longer matters.
+            match timeout(Duration::from_millis(10), self.udp_socket.send_to(buf, addr.as_ref())).await {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => Err(MumbleError::Io(e)),
                 Err(_) => Err(MumbleError::PacketDiscarded),

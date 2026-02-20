@@ -1,5 +1,4 @@
 use crate::message::ClientMessage;
-use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
 use crate::{error::DecryptError, varint::ReadExt};
@@ -14,6 +13,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
+
+use super::constants::{MAX_BANDWIDTH_IN_BITS};
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
     loop {
@@ -67,7 +68,7 @@ async fn handle_packet(
         // timestamp
         send.write_u64::<byteorder::LittleEndian>(timestamp)?;
         // user count
-        send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
+        send.write_u32::<byteorder::BigEndian>(state.active_clients.load(std::sync::atomic::Ordering::Relaxed))?;
         // max user count
         send.write_u32::<byteorder::BigEndian>(state.max_clients as u32)?;
         // max bandwidth per user
@@ -216,7 +217,16 @@ async fn handle_packet(
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
 
-            let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
+            let send_client_packet = {
+                // if we fail to send via the publisher we should drop the client
+                client
+                    .publisher
+                    .try_send(ClientMessage::RouteVoicePacket(client_packet))
+                    .map_err(|e| {
+                        state.add_client_to_disconnect_queue(session_id, crate::error::DisconnectReason::ClientMSPCFull);
+                        e
+                    })
+            };
 
             match send_client_packet {
                 Ok(_) => (),

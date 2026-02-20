@@ -1,3 +1,6 @@
+#![allow(unused_parens)]
+#![allow(mismatched_lifetime_syntaxes)]
+
 use rustls::ServerConfig;
 
 #[cfg(not(target_os = "windows"))]
@@ -82,6 +85,7 @@ struct Args {
     /// clients with the CitizenFX mumble client to join.
     #[clap(short, long, value_parser, default_value = None)]
     restrict_to_version: Option<String>,
+
     #[clap(short, long, value_parser, default_value = "32")]
     max_clients: usize,
 }
@@ -127,7 +131,7 @@ async fn main() {
     let state = Arc::new(ServerState::new(udp_socket.clone(), args.restrict_to_version, args.max_clients));
     let udp_state = state.clone();
 
-    tracing::info!("tcp/udp server start listening on {} with max clients of {}", args.listen, args.max_clients);
+    tracing::info!("tcp/udp server start listening on {}", args.listen);
 
     let cancelation_token = CancellationToken::new();
 

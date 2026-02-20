@@ -15,6 +15,7 @@ lazy_static! {
 const KEY_SIZE: usize = 16;
 const BLOCK_SIZE: usize = std::mem::size_of::<u128>();
 
+#[derive(Debug)]
 pub struct CryptState {
     pub key: [u8; KEY_SIZE],
     // internally as native endianness, externally as little endian and during ocb_* as big endian
@@ -57,7 +58,7 @@ impl Default for CryptState {
             remote_late: 0,
             remote_good: 0,
             remote_lost: 0,
-            remote_resync: 0
+            remote_resync: 0,
         }
     }
 }
@@ -157,6 +158,8 @@ impl CryptState {
 
         let tag = self.ocb_decrypt(buf.as_mut());
 
+        // we're not likely to upgrade our ring and i don't feel like trying to figure this out
+        #[allow(deprecated)]
         if Ok(()) != ring::constant_time::verify_slices_are_equal(&header[1..4], &tag.to_be_bytes()[0..3]) {
             self.decrypt_nonce = saved_nonce;
             return Err(DecryptError::Mac);
