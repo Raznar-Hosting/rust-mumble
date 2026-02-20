@@ -14,7 +14,8 @@ jobs:
       matrix:
         target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
+
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.5
         env:
@@ -23,3 +24,4 @@ jobs:
           RUSTTARGET: ${{ matrix.target }}
           TOOLCHAIN_VERSION: stable
           EXTRA_FILES: "README.md LICENSE"
+          UPLOAD_MODE: github
